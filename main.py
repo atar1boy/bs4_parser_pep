@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, MAIN_DOC_URL
+from constants import BASE_DIR, MAIN_DOC_URL, PEP_STATUS_URL
 from outputs import control_output
 from utils import find_tag, get_response
 
@@ -80,7 +80,8 @@ def download(session):
     soup = BeautifulSoup(response.text, 'lxml')
     main_tag = find_tag(soup, 'div', {'role': 'main'})
     table_tag = find_tag(main_tag, 'table', {'class': 'docutils'})
-    pdf_a4_tag = find_tag(table_tag, 'a', {'href': re.compile(r'.+pdf-a4\.zip$')})
+    pdf_a4_tag = find_tag(table_tag, 'a', {
+        'href': re.compile(r'.+pdf-a4\.zip$')})
     pdf_a4_link = pdf_a4_tag['href']
     archive_url = urljoin(downloads_url, pdf_a4_link)
     filename = archive_url.split('/')[-1]
@@ -94,10 +95,38 @@ def download(session):
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
+def pep_status(session):
+    response = get_response(session, PEP_STATUS_URL)
+    if response is None:
+        return
+    response.encoding = 'utf-8'
+    soup = BeautifulSoup(response.text, 'lxml')
+    section_tag = find_tag(
+        soup, 'section', {'id': 'numerical-index'})
+    tbody_tag = find_tag(section_tag, 'tbody')
+    tr_tags = tbody_tag.find_all('tr', limit=2)
+    results = []
+    for tr_tag in tr_tags:
+        abbr_tag = find_tag(tr_tag, 'abbr')
+        a_tag = find_tag(tr_tag, 'a', {'class': 'pep reference internal'})
+        link = urljoin(PEP_STATUS_URL, a_tag['href'])
+        response = get_response(session, link)
+        if response is None:
+            logging.info(f'Ссылка {link}, не доступна')
+            continue
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'lxml')
+        dl_tag = find_tag(soup, 'dl', {'class': 'rfc2822 field-list simple'})
+        status = find_tag(dl_tag, 'dd').find_next_sibling('dd').string
+        results.append(status)
+
+
+
 MODE_TO_FUNCTION = {
     'whats-new': whats_new,
     'latest-versions': latest_versions,
     'download': download,
+    'pep-status': pep_status
 }
 
 

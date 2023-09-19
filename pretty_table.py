@@ -2,7 +2,6 @@ from prettytable import PrettyTable
 
 
 if __name__ == '__main__':
-    # Инициализируем таблицу.
     yp_table = PrettyTable()
     yp_table.field_names = (
         '№ когорты',
