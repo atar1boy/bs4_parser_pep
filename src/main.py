@@ -7,7 +7,9 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, MAIN_DOC_URL, PEP_STATUS_URL
+from constants import (
+    BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, PEP_STATUS_URL
+)
 from outputs import control_output
 from utils import find_tag, get_response
 
@@ -25,7 +27,7 @@ def whats_new(session):
     sections_by_python = div_with_ul.find_all(
         'li', attrs={'class': 'toctree-l1'})
 
-    results = [('Ссылка на статью', 'Заголовок', 'Редактор, автор')]
+    result = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
     for section in tqdm(sections_by_python):
         version_a_tag = find_tag(section, 'a')
         href = version_a_tag['href']
@@ -38,9 +40,9 @@ def whats_new(session):
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         dl_text = dl.text.replace('\n', ' ')
-        results.append((version_link, h1.text, dl_text))
+        result.append((version_link, h1.text, dl_text))
 
-    return results
+    return result
 
 
 def latest_versions(session):
@@ -95,19 +97,33 @@ def download(session):
     logging.info(f'Архив был загружен и сохранён: {archive_path}')
 
 
-def pep_status(session):
+def pep(session):
+    """
+    Функция парсер для получения статистики PEP.
+    """
+
+    # Полуаем ответ от сайта и готовим супчик.
     response = get_response(session, PEP_STATUS_URL)
     if response is None:
         return
     response.encoding = 'utf-8'
     soup = BeautifulSoup(response.text, 'lxml')
+
+    # Ищем нужные теги.
     section_tag = find_tag(
         soup, 'section', {'id': 'numerical-index'})
     tbody_tag = find_tag(section_tag, 'tbody')
     tr_tags = tbody_tag.find_all('tr', limit=2)
+
+    # Подготавливаем переменную и проходимся циклом по PEP-ам.
     results = []
     for tr_tag in tr_tags:
+
+        # Получаем статус и тип PEP-a из таблицы.
         abbr_tag = find_tag(tr_tag, 'abbr')
+        status_on_table = abbr_tag.text[-1]
+
+        # Переходим на страницу PEP и получаем статус и тип.
         a_tag = find_tag(tr_tag, 'a', {'class': 'pep reference internal'})
         link = urljoin(PEP_STATUS_URL, a_tag['href'])
         response = get_response(session, link)
@@ -117,16 +133,23 @@ def pep_status(session):
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'lxml')
         dl_tag = find_tag(soup, 'dl', {'class': 'rfc2822 field-list simple'})
-        status = find_tag(dl_tag, 'dd').find_next_sibling('dd').string
-        results.append(status)
+        status_on_page = find_tag(dl_tag, 'dd').find_next_sibling('dd').string
 
+        # Сравним полученные данные.
+        if status_on_page not in EXPECTED_STATUS[status_on_table]:
+            logging.info(
+                f'Несовпадающие статусы:'
+                f'{link}'
+                f'Cтатус в карточке: {status_on_page}'
+                f'Ожидаемые статусы: {EXPECTED_STATUS[status_on_table]}'
+            )
 
 
 MODE_TO_FUNCTION = {
     'whats-new': whats_new,
     'latest-versions': latest_versions,
     'download': download,
-    'pep-status': pep_status
+    'pep-status': pep
 }
 
 
