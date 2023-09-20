@@ -15,18 +15,21 @@ from utils import find_tag, get_response
 
 
 def whats_new(session):
+    # Полуаем ответ от сайта и готовим супчик.
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
     response = get_response(session, whats_new_url)
     if response is None:
-        return
+        return response
     response.encoding = 'utf-8'
-
     soup = BeautifulSoup(response.text, 'lxml')
+
+    # Ищем нужный тэг.
     main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
     div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
     sections_by_python = div_with_ul.find_all(
         'li', attrs={'class': 'toctree-l1'})
 
+    # Подготавливаем переменные и проходимся циклом по тэгам.
     result = [('Ссылка на статью', 'Заголовок', 'Редактор, Автор')]
     for section in tqdm(sections_by_python):
         version_a_tag = find_tag(section, 'a')
@@ -48,7 +51,7 @@ def whats_new(session):
 def latest_versions(session):
     response = get_response(session, MAIN_DOC_URL)
     if response is None:
-        return
+        return response
     soup = BeautifulSoup(response.text, 'lxml')
     sidebar = find_tag(soup, 'div', {'class': 'sphinxsidebarwrapper'})
     ul_tags = sidebar.find_all('ul')
@@ -105,7 +108,7 @@ def pep(session):
     # Полуаем ответ от сайта и готовим супчик.
     response = get_response(session, PEP_STATUS_URL)
     if response is None:
-        return
+        return response
     response.encoding = 'utf-8'
     soup = BeautifulSoup(response.text, 'lxml')
 
@@ -113,19 +116,34 @@ def pep(session):
     section_tag = find_tag(
         soup, 'section', {'id': 'numerical-index'})
     tbody_tag = find_tag(section_tag, 'tbody')
-    tr_tags = tbody_tag.find_all('tr', limit=2)
+    tr_tags = tbody_tag.find_all('tr')
 
-    # Подготавливаем переменную и проходимся циклом по PEP-ам.
-    results = []
+    # Подготавливаем переменные и проходимся циклом по PEP-ам.
+    results = [('Статус', 'Количество')]
+    total_pep = 0
+    statistics = {
+        'A': 0,
+        'D': 0,
+        'F': 0,
+        'P': 0,
+        'R': 0,
+        'S': 0,
+        'W': 0,
+        '': 0,
+    }
     for tr_tag in tr_tags:
 
         # Получаем статус и тип PEP-a из таблицы.
         abbr_tag = find_tag(tr_tag, 'abbr')
-        status_on_table = abbr_tag.text[-1]
+        if len(abbr_tag.text) == 2:
+            status_on_table = abbr_tag.text[-1]
+        else:
+            status_on_table = ''
 
         # Переходим на страницу PEP и получаем статус и тип.
         a_tag = find_tag(tr_tag, 'a', {'class': 'pep reference internal'})
         link = urljoin(PEP_STATUS_URL, a_tag['href'])
+        session = requests_cache.CachedSession()
         response = get_response(session, link)
         if response is None:
             logging.info(f'Ссылка {link}, не доступна')
@@ -133,23 +151,36 @@ def pep(session):
         response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'lxml')
         dl_tag = find_tag(soup, 'dl', {'class': 'rfc2822 field-list simple'})
-        status_on_page = find_tag(dl_tag, 'dd').find_next_sibling('dd').string
+        status_on_page = dl_tag.find('abbr').text
 
         # Сравним полученные данные.
         if status_on_page not in EXPECTED_STATUS[status_on_table]:
             logging.info(
-                f'Несовпадающие статусы:'
-                f'{link}'
-                f'Cтатус в карточке: {status_on_page}'
+                f'Несовпадающие статусы: '
+                f'{link} '
+                f'Cтатус в карточке: {status_on_page} '
                 f'Ожидаемые статусы: {EXPECTED_STATUS[status_on_table]}'
             )
+
+        # Собираем статистику
+        total_pep += 1
+        statistics[status_on_table] += 1
+
+    # Подготавливаем ответ функции.
+    for key in statistics.keys():
+        results.append(
+            (EXPECTED_STATUS[key], statistics[key])
+        )
+    results.append(('Total', total_pep))
+
+    return results
 
 
 MODE_TO_FUNCTION = {
     'whats-new': whats_new,
     'latest-versions': latest_versions,
     'download': download,
-    'pep-status': pep
+    'pep': pep
 }
 
 
@@ -170,6 +201,8 @@ def main():
 
     if results is not None:
         control_output(results, args)
+    else:
+        logging.info('Ошибка при выполнении.')
     logging.info('Парсер завершил работу.')
 
 

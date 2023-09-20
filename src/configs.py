@@ -32,6 +32,9 @@ def configure_argument_parser(available_modes):
 
 
 def configure_logging():
+    """
+    Функция логирования.
+    """
     log_dir = BASE_DIR / 'logs'
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / 'parser.log'
