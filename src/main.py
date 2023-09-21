@@ -1,5 +1,6 @@
 import re
 import logging
+from collections import defaultdict
 from urllib.parse import urljoin
 
 import requests_cache
@@ -120,18 +121,8 @@ def pep(session):
 
     # Подготавливаем переменные и проходимся циклом по PEP-ам.
     results = [('Статус', 'Количество')]
-    total_pep = 0
-    statistics = {
-        'A': 0,
-        'D': 0,
-        'F': 0,
-        'P': 0,
-        'R': 0,
-        'S': 0,
-        'W': 0,
-        '': 0,
-    }
-    for tr_tag in tr_tags:
+    stats = defaultdict(int)
+    for tr_tag in tqdm(tr_tags):
 
         # Получаем статус и тип PEP-a из таблицы.
         abbr_tag = find_tag(tr_tag, 'abbr')
@@ -163,15 +154,11 @@ def pep(session):
             )
 
         # Собираем статистику
-        total_pep += 1
-        statistics[status_on_table] += 1
+        stats[status_on_page] += 1
 
     # Подготавливаем ответ функции.
-    for key in statistics.keys():
-        results.append(
-            (EXPECTED_STATUS[key], statistics[key])
-        )
-    results.append(('Total', total_pep))
+    results.extend(stats.items())
+    results.append(('Total', sum(stats.values())))
 
     return results
 
